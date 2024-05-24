@@ -1,15 +1,16 @@
 import { Request, Response } from 'express';
-import { v4 as uuidv4 } from 'uuid';
-import jwt ,{ JwtPayload } from 'jsonwebtoken';
 import PostModel from '../models/post';
 import UserModal from '../models/user';
 import { Op } from 'sequelize';
+import { getCurrentUser } from '../utils/getCurrentUser';
 
 export const addPost = async (req: Request, res: Response) => {
     const {parentPostId} = req.body
     try {
+        const currentUser = await getCurrentUser(req.headers.authorization);
         const post = await PostModel.create({
             ...req.body,
+            userId: currentUser.id,
             ...(parentPostId && {lastRepliedPosts: parentPostId})
         });
         if(parentPostId){
@@ -24,20 +25,13 @@ export const addPost = async (req: Request, res: Response) => {
 export const getAllPosts = async (req: Request, res: Response) => {
     let selectedPost:any  = {};
     const {postId} = req?.query;
-    const token = req.headers.authorization as string;
-    const user: JwtPayload = jwt.verify(token, process.env.JWT_SECRET as string) as JwtPayload ;
     const page: number = Number(req?.query?.page);
     const pageSize: number = Number(req?.query?.pageSize);
     const offset = page * pageSize;
     const limit = pageSize;
 
     try {
-        const selectedUser: any = await UserModal.findOne({
-            where: {
-                id: user.id,
-            },
-            raw: true
-        });
+        const selectedUser = await getCurrentUser(req.headers.authorization)
         const followersCount = selectedUser.followersCount;
         const followingCount = selectedUser.followingCount;
         const usersIdArray = followersCount.concat(followingCount);
@@ -57,7 +51,7 @@ export const getAllPosts = async (req: Request, res: Response) => {
             where: !!postId ? {
                 lastRepliedPosts: postId,
             } :{
-                userId: [...usersIdArray, user?.id],
+                userId: [...usersIdArray, selectedUser?.id],
                 type: 'POST'
             },
             include: [{
